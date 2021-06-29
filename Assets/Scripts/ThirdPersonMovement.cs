@@ -8,47 +8,41 @@ public class ThirdPersonMovement : MonoBehaviour
     public float accelerateFactor = 10;
     public float decelerateFactor = 7;
     public float moveSpeed = 3.7f;
-    public float turnSmoothTime = .12f;
+    public float turnFactor = 12;
+    public float deadZone = .05f;
 
     const string moveSpeedString = "MoveSpeed";
     int moveSpeedHash;
 
-    PlayerInput playerInput;
     CharacterController controller;
     Animator animator;
     Camera cam;
 
-    float inputMagnitude, currentMagnitude;
-    Vector3 inputDirection;
-    float inputAngle;
-    float currentTurnVelocity;
+    float inputMagnitude, smoothedMagnitude;
+    Vector3 inputDirection, targetDirection, smoothedDirection;
+    Quaternion smoothedRotation;
 
-
-    void Awake()
+    void Start()
     {
         controller = GetComponent<CharacterController>();
         animator = GetComponent<Animator>();
-        playerInput = GetComponent<PlayerInput>();
         moveSpeedHash = Animator.StringToHash(moveSpeedString);
         cam = Camera.main;
     }
 
-    // Update is called once per frame
     void Update()
     {
-        if (currentMagnitude != inputMagnitude)
+        SmoothSpeed();
+        if (inputMagnitude > deadZone)
         {
-            currentMagnitude = SmoothMagnitude(currentMagnitude, inputMagnitude, accelerateFactor, decelerateFactor);
+            SmoothDirection();
+            transform.rotation = smoothedRotation;
         }
-        if (currentMagnitude > .1f)
+        if (smoothedMagnitude > deadZone)
         {
-            animator.SetFloat(moveSpeedHash, currentMagnitude);
-            float sqCurrentMagnitude = currentMagnitude * currentMagnitude;
-            controller.Move(inputDirection * sqCurrentMagnitude * moveSpeed * Time.deltaTime);
-        }
-        if (inputMagnitude > .1f)
-        {
-            transform.rotation = SmoothAngle(inputAngle, cam.transform.eulerAngles.y, transform.eulerAngles.y, ref currentTurnVelocity, turnSmoothTime);
+            animator.SetFloat(moveSpeedHash, smoothedMagnitude);
+            float sqCurrentMagnitude = smoothedMagnitude * smoothedMagnitude;
+            controller.Move(smoothedDirection * sqCurrentMagnitude * moveSpeed * Time.deltaTime);
         }
     }
 
@@ -60,23 +54,24 @@ public class ThirdPersonMovement : MonoBehaviour
     public void SetInputVector(Vector2 value)
     {
         inputMagnitude = value.magnitude;
-        inputAngle = Mathf.Atan2(value.x, value.y) * Mathf.Rad2Deg;
         inputDirection = new Vector3(value.x, 0, value.y).normalized;
     }
 
-    static float SmoothMagnitude(float currentMagnitude, float inputMagnitude, float accelerateFactor, float decelerateFactor)
+    void SmoothSpeed()
     {
-        float magnitudeDifference = inputMagnitude - currentMagnitude;
-        if (Mathf.Abs(magnitudeDifference) < .05) { return inputMagnitude; }
-        float factor = magnitudeDifference > 0 ? accelerateFactor : decelerateFactor;
-        factor *= Time.deltaTime;
-        return Mathf.Lerp(currentMagnitude, inputMagnitude, factor);
+        float magnitudeDifference = inputMagnitude - smoothedMagnitude;
+        float factor = (magnitudeDifference > 0 ? accelerateFactor : decelerateFactor) * Time.deltaTime;
+        float lerpedMagnitude = Mathf.Lerp(smoothedMagnitude, inputMagnitude, factor);
+        smoothedMagnitude = Mathf.Abs(magnitudeDifference) > .05f ? lerpedMagnitude : inputMagnitude;
     }
 
-    static Quaternion SmoothAngle(float inputAngle, float cameraAngle, float currentAngle, ref float currentTurnVelocity, float turnSmoothTime)
+    void SmoothDirection()
     {
-        float targetAngle = inputAngle + cameraAngle;
-        float smoothedAngle = Mathf.SmoothDampAngle(currentAngle, targetAngle, ref currentTurnVelocity, turnSmoothTime);
-        return Quaternion.Euler(0, smoothedAngle, 0);
+        Quaternion inputRotation = Quaternion.LookRotation(inputDirection);
+        Quaternion cameraRotation = Quaternion.Euler(0, cam.transform.eulerAngles.y, 0);
+        Quaternion targetRotation = cameraRotation * inputRotation;
+        smoothedRotation = Quaternion.Slerp(transform.rotation, targetRotation, turnFactor * Time.deltaTime);
+        smoothedDirection = smoothedRotation * Vector3.forward;
+        targetDirection = targetRotation * Vector3.forward;
     }
 }
