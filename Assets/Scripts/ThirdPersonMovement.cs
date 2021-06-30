@@ -8,7 +8,7 @@ public class ThirdPersonMovement : MonoBehaviour
     public float accelerateFactor = 10;
     public float decelerateFactor = 7;
     public float moveSpeed = 3.7f;
-    public float turnFactor = 12;
+    public float turnSpeed = 10;
     public float deadZone = .05f;
 
     const string moveSpeedString = "MoveSpeed";
@@ -18,9 +18,10 @@ public class ThirdPersonMovement : MonoBehaviour
     Animator animator;
     Camera cam;
 
-    float inputMagnitude, smoothedMagnitude;
-    Vector3 inputDirection, targetDirection, smoothedDirection;
-    Quaternion smoothedRotation;
+    float inputMagnitude, smoothedMagnitude, animateMagnitude;
+    Vector3 inputDirection, smoothedDirection;
+    float currentTurnVelocity;
+
 
     void Start()
     {
@@ -32,18 +33,11 @@ public class ThirdPersonMovement : MonoBehaviour
 
     void Update()
     {
-        SmoothSpeed();
-        if (inputMagnitude > deadZone)
-        {
-            SmoothDirection();
-            transform.rotation = smoothedRotation;
-        }
-        if (smoothedMagnitude > deadZone)
-        {
-            animator.SetFloat(moveSpeedHash, smoothedMagnitude);
-            float sqCurrentMagnitude = smoothedMagnitude * smoothedMagnitude;
-            controller.Move(smoothedDirection * sqCurrentMagnitude * moveSpeed * Time.deltaTime);
-        }
+        SmoothMagnitude();
+        SmoothDirection();
+        Animate();
+        Turn();
+        Move();
     }
 
     public void SetInputVector(InputAction.CallbackContext value)
@@ -57,21 +51,43 @@ public class ThirdPersonMovement : MonoBehaviour
         inputDirection = new Vector3(value.x, 0, value.y).normalized;
     }
 
-    void SmoothSpeed()
+    void SmoothMagnitude()
     {
-        float magnitudeDifference = inputMagnitude - smoothedMagnitude;
-        float factor = (magnitudeDifference > 0 ? accelerateFactor : decelerateFactor) * Time.deltaTime;
+        float difference = inputMagnitude - smoothedMagnitude;
+        float factor = (difference > 0 ? accelerateFactor : decelerateFactor) * Time.deltaTime;
         float lerpedMagnitude = Mathf.Lerp(smoothedMagnitude, inputMagnitude, factor);
-        smoothedMagnitude = Mathf.Abs(magnitudeDifference) > .05f ? lerpedMagnitude : inputMagnitude;
+        bool bigDifference = Mathf.Abs(difference) > .05f;
+        smoothedMagnitude = bigDifference ? lerpedMagnitude : inputMagnitude;
     }
 
     void SmoothDirection()
     {
-        Quaternion inputRotation = Quaternion.LookRotation(inputDirection);
-        Quaternion cameraRotation = Quaternion.Euler(0, cam.transform.eulerAngles.y, 0);
-        Quaternion targetRotation = cameraRotation * inputRotation;
-        smoothedRotation = Quaternion.Slerp(transform.rotation, targetRotation, turnFactor * Time.deltaTime);
+        if (inputMagnitude < deadZone) { return; }
+        float currentAngle = transform.eulerAngles.y;
+        float inputLocalAngle = Quaternion.LookRotation(inputDirection).eulerAngles.y;
+        float targetAngle = inputLocalAngle + cam.transform.eulerAngles.y;
+        float smoothedAngle = Mathf.SmoothDampAngle(currentAngle, targetAngle, ref currentTurnVelocity, 1 / turnSpeed);
+        Quaternion smoothedRotation = Quaternion.Euler(0, smoothedAngle, 0);
         smoothedDirection = smoothedRotation * Vector3.forward;
-        targetDirection = targetRotation * Vector3.forward;
+    }
+
+    void Animate()
+    {
+        if (animateMagnitude == smoothedMagnitude) { return; }
+        animateMagnitude = smoothedMagnitude;
+        animator.SetFloat(moveSpeedHash, animateMagnitude);
+    }
+
+    void Turn()
+    {
+        if (inputMagnitude < deadZone) { return; }
+        transform.rotation = Quaternion.LookRotation(smoothedDirection);
+    }
+
+    void Move()
+    {
+        if (inputMagnitude < deadZone) { return; }
+        float sqCurrentMagnitude = smoothedMagnitude * smoothedMagnitude;
+        controller.Move(smoothedDirection * sqCurrentMagnitude * moveSpeed * Time.deltaTime);
     }
 }
