@@ -18,7 +18,7 @@ public class ThirdPersonMovement : MonoBehaviour
     Animator animator;
     Camera cam;
 
-    float inputMagnitude, smoothedMagnitude, animateMagnitude;
+    float inputMagnitude, smoothedMagnitude, moveMagnitude, animateMagnitude;
     Vector3 inputDirection, smoothedDirection;
     float currentTurnVelocity;
 
@@ -29,15 +29,17 @@ public class ThirdPersonMovement : MonoBehaviour
         animator = GetComponent<Animator>();
         moveSpeedHash = Animator.StringToHash(moveSpeedString);
         cam = Camera.main;
+        inputDirection = transform.forward;
+        smoothedDirection = transform.forward;
     }
 
     void Update()
     {
         SmoothMagnitude();
         SmoothDirection();
-        Animate();
-        Turn();
         Move();
+        Turn();
+        Animate();
     }
 
     public void SetInputVector(InputAction.CallbackContext value)
@@ -48,7 +50,10 @@ public class ThirdPersonMovement : MonoBehaviour
     public void SetInputVector(Vector2 value)
     {
         inputMagnitude = value.magnitude;
-        inputDirection = new Vector3(value.x, 0, value.y).normalized;
+        if (inputMagnitude > deadZone) // this prevents direction becoming Vector3.zero
+        {
+            inputDirection = new Vector3(value.x, 0, value.y).normalized;
+        }
     }
 
     void SmoothMagnitude()
@@ -71,11 +76,12 @@ public class ThirdPersonMovement : MonoBehaviour
         smoothedDirection = smoothedRotation * Vector3.forward;
     }
 
-    void Animate()
+    void Move()
     {
-        if (animateMagnitude == smoothedMagnitude) { return; }
-        animateMagnitude = smoothedMagnitude;
-        animator.SetFloat(moveSpeedHash, animateMagnitude);
+        if (inputMagnitude < deadZone) { return; }
+        float sqCurrentMagnitude = smoothedMagnitude * smoothedMagnitude;
+        controller.Move(smoothedDirection * sqCurrentMagnitude * moveSpeed * Time.deltaTime);
+        moveMagnitude = controller.velocity.magnitude / moveSpeed;
     }
 
     void Turn()
@@ -84,10 +90,11 @@ public class ThirdPersonMovement : MonoBehaviour
         transform.rotation = Quaternion.LookRotation(smoothedDirection);
     }
 
-    void Move()
+    void Animate()
     {
-        if (inputMagnitude < deadZone) { return; }
-        float sqCurrentMagnitude = smoothedMagnitude * smoothedMagnitude;
-        controller.Move(smoothedDirection * sqCurrentMagnitude * moveSpeed * Time.deltaTime);
+        // todo check CharacterController.velocity to see if player is stuck at wall. If so, don't show run animation.
+        if (animateMagnitude == smoothedMagnitude) { return; }
+        animateMagnitude = smoothedMagnitude;
+        animator.SetFloat(moveSpeedHash, animateMagnitude);
     }
 }
